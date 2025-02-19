@@ -50,8 +50,6 @@ class GPT2Model(GPTPreTrainedModel):
     inputs_embeds = None
 
     ### YOUR CODE HERE
-    input_shape = input_ids.size()
-    seq_length = input_shape[1]
     inputs_embeds = self.word_embedding(input_ids)
     pos_ids = self.position_ids[:, :seq_length]
     pos_embeds = self.pos_embedding(pos_ids)
@@ -107,7 +105,7 @@ class GPT2Model(GPTPreTrainedModel):
       return hidden_state(s) * E^T
     """
     ### YOUR CODE HERE
-    word_embeddings = self.wte.weight
+    word_embeddings = self.word_embedding
     logits = torch.matmul(hidden_state, word_embeddings.T)
     return logits
 

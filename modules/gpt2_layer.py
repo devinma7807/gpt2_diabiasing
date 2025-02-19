@@ -41,13 +41,16 @@ class GPT2Layer(nn.Module):
            - Apply dropout, residual connection, and layer normalization according to the plot in the assignment. (Use self.add)
            - A feed-forward layer that applies transformations to further refine the hidden states.
     """
+    # Layer normalization applied *before* the attention layer
     A = self.attention_layer_norm(hidden_states)
+    # A multi-head attention layer (CausalSelfAttention) that computes self-attention based on masked inputs.
     B = self.self_attention(A, attention_mask)
     B = B.permute(0, 2, 1, 3).contiguous().view(hidden_states.shape[0], hidden_states.shape[1], -1)
     B = self.add(hidden_states, B, self.attention_dense, self.attention_dropout)
+    # Layer normalization applied *before* the feed-forward layer.
     C = self.out_layer_norm(B)
     D = self.interm_af(self.interm_dense(C))
-    D = self.add(B, D, self.out_dense, self.out_dropout)
+    D = self.add(C, D, self.out_dense, self.out_dropout)
     return D
     
     
