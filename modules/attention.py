@@ -35,11 +35,15 @@ class CausalSelfAttention(nn.Module):
 
     ### YOUR CODE HERE
     sqrt_dk = key.shape[-1] ** 0.5
-    att_score = torch.matmul(query, key.transpose(-2, -1) / sqrt_dk)
+    att_score = torch.matmul(query, key.transpose(-2, -1))/sqrt_dk
     if attention_mask is not None:
-      att_score = att_score.masked_fill(attention_mask == 0, float('-inf'))
-    
-    att_score = nn.functional.softmax(att_score, dim = -1)
+      att_score = att_score + attention_mask
+    max_score_idx = torch.argmax(att_score).item()
+    print(f"Max Attention Score Location: {max_score_idx}")
+    print(f"Query Max: {query.max().item()}, Min: {query.min().item()}")
+    print(f"Key Max: {key.max().item()}, Min: {key.min().item()}")
+
+    att_score = nn.functional.softmax(att_score.float(), dim = -1, dtype=torch.float32)
     att_score = self.dropout(att_score)
     attention_output = torch.matmul(att_score, value)
     return attention_output
