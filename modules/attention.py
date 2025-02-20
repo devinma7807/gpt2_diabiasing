@@ -34,17 +34,20 @@ class CausalSelfAttention(nn.Module):
   def attention(self, key, query, value, attention_mask):
 
     ### YOUR CODE HERE
+    bs, _, _, seq_l = attention_mask.shape
+    causal_mask = torch.triu(torch.ones(seq_l, seq_l, device=attention_mask.device), diagonal=1) # (sl ,sl)
+    causal_mask = causal_mask.masked_fill(causal_mask == 1, -10000).unsqueeze(0).unsqueeze(0) #(1, 1, sl, sl)
+
     sqrt_dk = key.shape[-1] ** 0.5
-    att_score = torch.matmul(query, key.transpose(-2, -1))/sqrt_dk
-    if attention_mask is not None:
-      att_score = att_score + attention_mask
-    # max_score_idx = torch.argmax(att_score).item()
-    # print(f"Max Attention Score Location: {max_score_idx}")
-    # print(f"Query Max: {query.max().item()}, Min: {query.min().item()}")
-    # print(f"Key Max: {key.max().item()}, Min: {key.min().item()}")
-    att_score = nn.functional.softmax(att_score.float(), dim = -1, dtype=torch.float32)
+    att_score = torch.matmul(query, key.transpose(-2, -1))/sqrt_dk # Q bs, nh, sl, hiddensize-> bs, nh, sl, sl
+    att_score = att_score + causal_mask
+
+    # att_score (bs,_, sl, sl)
+    if attention_mask is not None: 
+      att_score = att_score + attention_mask # (bs,1,1,sl)
+    att_score = nn.functional.softmax(att_score.float(), dim = -1, dtype=torch.float32) # bs, nh, sl, sl
     att_score = self.dropout(att_score)
-    attention_output = torch.matmul(att_score, value)
+    attention_output = torch.matmul(att_score, value) # ns, nh, sl, hs
     return attention_output
 
 
