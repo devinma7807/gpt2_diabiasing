@@ -61,7 +61,36 @@ class AdamW(Optimizer):
                 ###
                 ###       Refer to the default project handout for more details.
                 ### YOUR CODE HERE
-                raise NotImplementedError
+                b1, b2 = group["betas"]
+                eps = group["eps"]
+                wD = group["weight_decay"]
+
+                # Update the first and second moments of the gradients.
+                if len(state) == 0:
+                    state["step"] = 0
+                    state["m"] = torch.zeros_like(p.data)
+                    state["v"] = torch.zeros_like(p.data)
+                m, v = state["m"], state["v"] # m, v
+                state["step"] += 1 # t = t + 1
+                t = state["step"]
+                m.mul_(b1).add_(grad, alpha=1 - b1) # m'
+                v.mul_(b2).addcmul_(grad, grad, value=1 - b2) # v'
+
+                # bias correction
+                if group["correct_bias"]:
+                    c1 = 1 - b1 ** t
+                    c2 = math.sqrt(1 - b2 ** t)
+                    step_size = alpha * c2 / c1
+                else:
+                    step_size = alpha
+
+                # Update parameters (p.data).
+                p.data.addcdiv_(m, v.sqrt().add_(eps), value=-step_size)
+
+                # Apply weight decay after the main gradient-based updates.
+                if wD > 0:
+                    p.data.mul_(1 - alpha * wD)
+
 
 
         return loss
