@@ -50,9 +50,11 @@ class SonnetGPT(nn.Module):
     self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     self.tokenizer.pad_token = self.tokenizer.eos_token
 
-    # By default, fine-tune the full model. TODO: this is maybe not idea.
+    # By default, fine-tune the full model. TODO: this is maybe not idea.?????
     for param in self.gpt.parameters():
       param.requires_grad = True
+    
+    self.lm_head = nn.Linear(args.d, self.tokenizer.vocab_size)
 
   def forward(self, input_ids, attention_mask):
     """
@@ -61,7 +63,9 @@ class SonnetGPT(nn.Module):
     not just the distribution over next tokens for the last token!
     """
     ### YOUR CODE HERE
-    raise NotImplementedError
+    outputs = self.gpt(input_ids, attention_mask)
+    hidden_states = output['last_hidden_state']
+    logits = self.lm_head(hidden_states)
 
 
   def get_device(self):
@@ -75,8 +79,9 @@ class SonnetGPT(nn.Module):
 
     TODO: this is probably not ideal. You can look at hugging face's model.generate(...) function for inspiration.
     In particular, generating multiple sequences and choosing the best with beam search is one avenue. Top_k is another;
-    there are many.
+    there are many. 
     """
+    ############################################### this part has not been changed
     token_ids = encoding.to(self.get_device())
     attention_mask = torch.ones(token_ids.shape, dtype=torch.int64).to(self.get_device())
 

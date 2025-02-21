@@ -53,12 +53,13 @@ class GPT2SentimentClassifier(torch.nn.Module):
       elif config.fine_tune_mode == 'full-model':
         param.requires_grad = True
 
-    ### TODO: Create any instance variables you need to classify the sentiment of BERT embeddings.
-    ### YOUR CODE HERE
+  #   ### TODO: Create any instance variables you need to classify the sentiment of BERT embeddings.
+  #   ### YOUR CODE HERE
+    self.hidden_size = self.gpt.config.hidden_size
+    self.attention =torch. nn.Linear(self.hidden_size, 1)
+    
     self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
-    self.classifier = torch.nn.Linear(self.gpt.config.hidden_size, self.num_labels)
-
-
+    self.classifier = torch.nn.Linear(self.hidden_size, self.num_labels)
 
   def forward(self, input_ids, attention_mask):
     '''Takes a batch of sentences and returns logits for sentiment classes'''
@@ -68,9 +69,10 @@ class GPT2SentimentClassifier(torch.nn.Module):
     ###       the training loop currently uses F.cross_entropy as the loss function.
     ### YOUR CODE HERE
     outputs = self.gpt(input_ids=input_ids, attention_mask=attention_mask)
-    last_hidden_state = outputs["last_hidden_state"]  # Shape: (batch_size, seq_len, hidden_size)
-    last_token_embedding = last_hidden_state[:, -1, :]  # Get last token representation (batch_size, hidden_size)
-    logits = self.classifier(self.dropout(last_token_embedding))
+    last_hidden_state = outputs["last_hidden_state"]  # (batch_size, seq_len, hidden_size)
+    attention_weights = torch.softmax(self.attention(last_hidden_state), dim=1)  # (batch_size, seq_len, 1)
+    weighted_sum = torch.sum(attention_weights * last_hidden_state, dim=1)  # (batch_size, hidden_size)
+    logits = self.classifier(self.dropout(weighted_sum))
     return logits
 
 
@@ -371,35 +373,35 @@ if __name__ == "__main__":
   args = get_args()
   seed_everything(args.seed)
 
-  print('Training Sentiment Classifier on SST...')
-  config = SimpleNamespace(
-    filepath='sst-classifier.pt',
-    lr=1e-5,
-    use_gpu=args.use_gpu,
-    epochs=15,
-    batch_size=16,
-    hidden_dropout_prob=0.1,
-    train='data/ids-sst-train.csv',
-    dev='data/ids-sst-dev.csv',
-    test='data/ids-sst-test-student.csv',
-    fine_tune_mode=args.fine_tune_mode,
-    dev_out='predictions/' + args.fine_tune_mode + '-sst-dev-out.csv',
-    test_out='predictions/' + args.fine_tune_mode + '-sst-test-out.csv'
-  )
+  # print('Training Sentiment Classifier on SST...')
+  # config = SimpleNamespace(
+  #   filepath='sst-classifier_full.pt',
+  #   lr=1e-5,
+  #   use_gpu=args.use_gpu,
+  #   epochs=10,
+  #   batch_size=32,
+  #   hidden_dropout_prob=0.3,
+  #   train='data/ids-sst-train.csv',
+  #   dev='data/ids-sst-dev.csv',
+  #   test='data/ids-sst-test-student.csv',
+  #   fine_tune_mode=args.fine_tune_mode,
+  #   dev_out='predictions/' + args.fine_tune_mode + '-sst-dev-out.csv',
+  #   test_out='predictions/' + args.fine_tune_mode + '-sst-test-out.csv'
+  # )
 
-  train(config)
+  # train(config)
 
-  print('Evaluating on SST...')
-  test(config)
+  # print('Evaluating on SST...')
+  # test(config)
 
   print('Training Sentiment Classifier on cfimdb...')
   config = SimpleNamespace(
-    filepath='cfimdb-classifier.pt',
-    lr=1e-5,
+    filepath='cfimdb-classifier_full.pt',
+    lr=1.2e-5,
     use_gpu=args.use_gpu,
-    epochs=15,
+    epochs=10,
     batch_size=8,
-    hidden_dropout_prob=0.15,
+    hidden_dropout_prob=0.3,
     train='data/ids-cfimdb-train.csv',
     dev='data/ids-cfimdb-dev.csv',
     test='data/ids-cfimdb-test-student.csv',
