@@ -105,7 +105,7 @@ class GPT2Model(GPTPreTrainedModel):
       return hidden_state(s) * E^T
     """
     ### YOUR CODE HERE
-    word_embeddings = self.word_embedding
+    word_embeddings = self.word_embedding.weight
     logits = torch.matmul(hidden_state, word_embeddings.T)
     return logits
 

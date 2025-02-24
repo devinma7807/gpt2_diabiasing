@@ -31,6 +31,8 @@ from evaluation import model_eval_paraphrase, model_test_paraphrase
 from models.gpt2 import GPT2Model
 
 from optimizer import AdamW
+import pandas as pd
+from transformers import GPT2Tokenizer
 
 TQDM_DISABLE = False
 
@@ -67,7 +69,7 @@ class DebiasLayer(nn.Module):
     def compute_gender_subspace(gpt2_model, tokenizer, gender_pairs):
         """Compute the gender subspace dynamically from GPT-2 embeddings."""
         with torch.no_grad():
-            embeddings = gpt2_model.get_input_embeddings().weight  # GPT-2 token embeddings
+            embeddings = gpt2_model.word_embedding.weight   # GPT-2 token embeddings
             gender_vectors = []
             for male_word, female_word in gender_pairs:
                 male_idx = tokenizer.convert_tokens_to_ids(male_word)
@@ -80,7 +82,9 @@ class DebiasLayer(nn.Module):
             U, S, Vt = np.linalg.svd(gender_matrix, full_matrices=False)
             
             # Take only the first principal component (1D vector of size 768)
-            gender_subspace = torch.tensor(Vt[0], dtype=torch.float32).to(gpt2_model.device)  # First singular vector
+            device = next(gpt2_model.parameters()).device  # ✅ Get the correct device
+            gender_subspace = torch.tensor(Vt[0], dtype=torch.float32).to(device)  # ✅ Use the correct device
+            # gender_subspace = torch.tensor(Vt[0], dtype=torch.float32).to(gpt2_model.device)  # First singular vector
 
             # Ensure the gender subspace matches GPT-2 embedding dimension (768,)
             gender_subspace = gender_subspace.view(768)  # Reshape to match embeddings
@@ -128,7 +132,8 @@ class ParaphraseGPT(nn.Module):
         
 
 
-    logits = self.paraphrase_detection_head(last_token_hidden_state)
+    # logits = self.paraphrase_detection_head(last_token_hidden_state)
+    logits = self.gpt.hidden_state_to_token(last_token_hidden_state)  #  Correct way
     return logits
 
 
@@ -150,6 +155,11 @@ def save_model(model, optimizer, args, filepath):
 def train(args):
   """Train GPT-2 for paraphrase detection on the Quora dataset."""
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
+  df = pd.read_csv("data/gender_pairs.csv")
+  gender_pairs = list(df.itertuples(index=False, name=None))
+  tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+  gpt2_model = GPT2Model.from_pretrained("gpt2").to(device)
+  gender_subspace = DebiasLayer.compute_gender_subspace(gpt2_model, tokenizer, gender_pairs)
   # Create the data and its corresponding datasets and dataloader.
   para_train_data = load_paraphrase_data(args.para_train)
   para_dev_data = load_paraphrase_data(args.para_dev)
@@ -208,6 +218,11 @@ def train(args):
 def test(args):
   """Evaluate your model on the dev and test datasets; save the predictions to disk."""
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
+  df = pd.read_csv("data/gender_pairs.csv")
+  gender_pairs = list(df.itertuples(index=False, name=None))
+  tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+  gpt2_model = GPT2Model.from_pretrained("gpt2").to(device)
+  gender_subspace = DebiasLayer.compute_gender_subspace(gpt2_model, tokenizer, gender_pairs)
   saved = torch.load(args.filepath)
 
   model = ParaphraseGPT(saved['args'], gender_subspace)
