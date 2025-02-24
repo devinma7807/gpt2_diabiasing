@@ -45,14 +45,62 @@ def seed_everything(seed=11711):
   torch.backends.cudnn.deterministic = True
 
 
+class DebiasLayer(nn.Module):
+    def __init__(self, gender_subspace):
+        super().__init__()
+        self.gender_subspace = gender_subspace  # Precomputed gender direction
+
+    def forward(self, embeddings):
+        """Projects embeddings onto a debiased subspace."""
+        # Ensure the gender subspace is reshaped correctly
+        gender_direction = self.gender_subspace.view(-1, 1)  # Reshape to (768, 1) for matmul
+        
+        # Compute the projection onto the gender direction
+        projection = torch.matmul(embeddings, gender_direction) * gender_direction.T
+        
+        # Subtract the projection to remove gender bias
+        debiased_embeddings = embeddings - projection
+        return debiased_embeddings
+
+
+    @staticmethod
+    def compute_gender_subspace(gpt2_model, tokenizer, gender_pairs):
+        """Compute the gender subspace dynamically from GPT-2 embeddings."""
+        with torch.no_grad():
+            embeddings = gpt2_model.get_input_embeddings().weight  # GPT-2 token embeddings
+            gender_vectors = []
+            for male_word, female_word in gender_pairs:
+                male_idx = tokenizer.convert_tokens_to_ids(male_word)
+                female_idx = tokenizer.convert_tokens_to_ids(female_word)
+                if male_idx is not None and female_idx is not None:
+                    gender_vectors.append(embeddings[male_idx] - embeddings[female_idx])
+            
+            # Convert to NumPy and compute gender subspace using SVD
+            gender_matrix = torch.stack(gender_vectors).cpu().numpy()
+            U, S, Vt = np.linalg.svd(gender_matrix, full_matrices=False)
+            
+            # Take only the first principal component (1D vector of size 768)
+            gender_subspace = torch.tensor(Vt[0], dtype=torch.float32).to(gpt2_model.device)  # First singular vector
+
+            # Ensure the gender subspace matches GPT-2 embedding dimension (768,)
+            gender_subspace = gender_subspace.view(768)  # Reshape to match embeddings
+            return gender_subspace
+
+
+
+
 class ParaphraseGPT(nn.Module):
   """Your GPT-2 Model designed for paraphrase detection."""
 
-  def __init__(self, args):
+  def __init__(self, args, gender_subspace=None):
     super().__init__()
     self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
     self.paraphrase_detection_head = nn.Linear(args.d, 2)  # Paraphrase detection has two outputs: 1 (yes) or 0 (no).
 
+    if gender_subspace is not None:
+      self.debias_layer = DebiasLayer(gender_subspace)
+    else:
+      self.debias_layer = None
     # By default, fine-tune the full model.
     for param in self.gpt.parameters():
       param.requires_grad = True
@@ -62,7 +110,6 @@ class ParaphraseGPT(nn.Module):
     TODO: Predict the label of the token using the paraphrase_detection_head Linear layer.
 
     We structure the input as:
-
       'Is "{s1}" a paraphrase of "{s2}"? Answer "yes" or "no": '
 
     So you want to find the prediction for the next token at the end of this sentence. Optimistically, it will be the
@@ -75,6 +122,12 @@ class ParaphraseGPT(nn.Module):
     outputs = self.gpt(input_ids, attention_mask)
     last_hidden_state = outputs["last_hidden_state"]
     last_token_hidden_state = last_hidden_state[:, -1, :]
+
+    if self.debias_layer:
+      last_token_hidden_state = self.debias_layer(last_token_hidden_state)
+        
+
+
     logits = self.paraphrase_detection_head(last_token_hidden_state)
     return logits
 
@@ -110,7 +163,7 @@ def train(args):
                                    collate_fn=para_dev_data.collate_fn)
 
   args = add_arguments(args)
-  model = ParaphraseGPT(args)
+  model = ParaphraseGPT(args, gender_subspace)
   model = model.to(device)
 
   lr = args.lr
@@ -157,7 +210,7 @@ def test(args):
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
   saved = torch.load(args.filepath)
 
-  model = ParaphraseGPT(saved['args'])
+  model = ParaphraseGPT(saved['args'], gender_subspace)
   model.load_state_dict(saved['model'])
   model = model.to(device)
   model.eval()

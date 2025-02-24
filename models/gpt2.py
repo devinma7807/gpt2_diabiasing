@@ -129,7 +129,7 @@ class GPT2Model(GPTPreTrainedModel):
       l.self_attention.key.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.bias'][d:d*2]
       l.self_attention.value.weight.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.weight'][:, d*2:].T
       l.self_attention.value.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.bias'][d*2:]
-
+      
       # Remap final dense layer in MHA.
       l.attention_dense.weight.data = gpt_model.state_dict()[f'h.{i}.attn.c_proj.weight'].T
       l.attention_dense.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_proj.bias']
