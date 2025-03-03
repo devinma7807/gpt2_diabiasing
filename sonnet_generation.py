@@ -26,8 +26,46 @@ from datasets import (
 from models.gpt2 import GPT2Model
 
 from optimizer import AdamW
+import pandas as pd
 
 TQDM_DISABLE = False
+
+class DebiasLayer(nn.Module):
+    def __init__(self, gender_subspace):
+        super().__init__()
+        self.gender_subspace = gender_subspace  # Precomputed gender direction
+
+    def forward(self, embeddings):
+        """Projects embeddings onto a debiased subspace."""
+        gender_direction = self.gender_subspace.view(-1, 1)  # Reshape for matmul
+        projection = torch.matmul(embeddings, gender_direction) * gender_direction.T
+        debiased_embeddings = embeddings - projection
+        return debiased_embeddings
+
+    @staticmethod
+    def compute_gender_subspace(gpt2_model, tokenizer, gender_pairs):
+        """Compute the gender subspace dynamically from GPT-2 embeddings."""
+        with torch.no_grad():
+            embeddings = gpt2_model.word_embedding.weight   # GPT-2 token embeddings
+            gender_vectors = []
+            for male_word, female_word in gender_pairs:
+                male_idx = tokenizer.convert_tokens_to_ids(male_word)
+                female_idx = tokenizer.convert_tokens_to_ids(female_word)
+                if male_idx is not None and female_idx is not None:
+                    gender_vectors.append(embeddings[male_idx] - embeddings[female_idx])
+            
+            # Convert to NumPy and compute gender subspace using SVD
+            gender_matrix = torch.stack(gender_vectors).cpu().numpy()
+            U, S, Vt = np.linalg.svd(gender_matrix, full_matrices=False)
+            
+            # Take only the first principal component (1D vector of size 768)
+            device = next(gpt2_model.parameters()).device  # ✅ Get the correct device
+            gender_subspace = torch.tensor(Vt[0], dtype=torch.float32).to(device)  # ✅ Use the correct device
+            # gender_subspace = torch.tensor(Vt[0], dtype=torch.float32).to(gpt2_model.device)  # First singular vector
+
+            # Ensure the gender subspace matches GPT-2 embedding dimension (768,)
+            gender_subspace = gender_subspace.view(768)  # Reshape to match embeddings
+            return gender_subspace
 
 
 # Fix the random seed.
@@ -44,11 +82,15 @@ def seed_everything(seed=11711):
 class SonnetGPT(nn.Module):
   """Your GPT-2 Model designed for paraphrase detection."""
 
-  def __init__(self, args):
+  def __init__(self, args, gender_subspace=None):
     super().__init__()
     self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
     self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     self.tokenizer.pad_token = self.tokenizer.eos_token
+    if gender_subspace is not None:
+      self.debias_layer = DebiasLayer(gender_subspace)
+    else:
+      self.debias_layer = None
 
     # By default, fine-tune the full model. TODO: this is maybe not idea.?????
     for param in self.gpt.parameters():
@@ -64,8 +106,12 @@ class SonnetGPT(nn.Module):
     """
     ### YOUR CODE HERE
     outputs = self.gpt(input_ids, attention_mask)
-    hidden_states = output['last_hidden_state']
+    hidden_states = outputs['last_hidden_state']
+    if self.debias_layer:
+      hidden_states = self.debias_layer(hidden_states)  # Apply debiasing before logits
+
     logits = self.lm_head(hidden_states)
+    return logits
 
 
   def get_device(self):
@@ -136,8 +182,14 @@ def save_model(model, optimizer, args, filepath):
 
 
 def train(args):
-  """Train GPT-2 for paraphrase detection on the Quora dataset."""
+  """Train GPT-2 for Sonnet Generation """
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
+  df = pd.read_csv("data/gender_pairs.csv")
+  gender_pairs = list(df.itertuples(index=False, name=None))
+  tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+  gpt2_model = GPT2Model.from_pretrained("gpt2").to(device)
+  gender_subspace = DebiasLayer.compute_gender_subspace(gpt2_model, tokenizer, gender_pairs)
+  
   # Create the data and its corresponding datasets and dataloader.
   sonnet_dataset = SonnetsDataset(args.sonnet_path)
   sonnet_dataloader = DataLoader(sonnet_dataset, shuffle=True, batch_size=args.batch_size,
@@ -193,9 +245,16 @@ def train(args):
 @torch.no_grad()
 def generate_submission_sonnets(args):
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
+  df = pd.read_csv("data/gender_pairs.csv")
+  gender_pairs = list(df.itertuples(index=False, name=None))
+  tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+  gpt2_model = GPT2Model.from_pretrained("gpt2").to(device)
+  gender_subspace = DebiasLayer.compute_gender_subspace(gpt2_model, tokenizer, gender_pairs)
+
+
   saved = torch.load(f'{args.epochs-1}_{args.filepath}', weights_only=False)
 
-  model = SonnetGPT(saved['args'])
+  model = SonnetGPT(saved['args'], gender_subspace)
   model.load_state_dict(saved['model'])
   model = model.to(device)
   model.eval()

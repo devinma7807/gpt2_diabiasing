@@ -1,5 +1,6 @@
 import torch
-from transformers import GPT2Tokenizer, GPT2Model
+from transformers import GPT2Tokenizer
+from models.gpt2 import GPT2Model
 from paraphrase_detection import ParaphraseGPT, DebiasLayer
 import pandas as pd
 
@@ -49,6 +50,7 @@ test_sentences = [
 # Compute gender subspace dynamically
 df = pd.read_csv("data/gender_pairs.csv")
 gender_pairs = list(df.itertuples(index=False, name=None))
+gpt2_model = GPT2Model.from_pretrained("gpt2").to(device)
 gender_subspace = DebiasLayer.compute_gender_subspace(gpt2_model, tokenizer, gender_pairs)
 
 # Load models (one with debiasing, one without)
