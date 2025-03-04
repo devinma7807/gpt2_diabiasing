@@ -3,6 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from transformers import GPT2Tokenizer
+import pandas as pd
+
+agency_lexicon_data = pd.read_csv('./pt_agency_lexicons.csv')
 
 class PowerTransformer(nn.Module):
     def __init__(self, hidden_dim, vocab_size, beta=5.0):
@@ -23,9 +26,9 @@ class PowerTransformer(nn.Module):
 
         # Define agency lexicon，need to find a new database for these
         self.agency_lexicon = {
-            "positive": ["achieve", "lead", "create", "invent", "command", "decide"],
-            "neutral": ["walk", "observe", "stand", "exist", "see"],
-            "negative": ["obey", "suffer", "hesitate", "submit", "fail"]
+            "positive": agency_lexicon_data['positive'].tolist(),
+            "neutral": agency_lexicon_data['neutral'].tolist(),
+            "negative": agency_lexicon_data['negative'].tolist()
         }
     
     def mask_and_reconstruct(self, input_ids, tokenizer, target_agency="neutral"):
