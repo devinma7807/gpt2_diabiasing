@@ -301,6 +301,5 @@ if __name__ == "__main__":
   args = get_args()
   args.filepath = f'{args.epochs}-{args.lr}-paraphrase_withPT.pt'  # Save path.
   seed_everything(args.seed)  # Fix the seed for reproducibility.
-  # train(args)
+  train(args)
   test(args)
-

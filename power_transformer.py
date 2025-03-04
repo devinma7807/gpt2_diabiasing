@@ -6,9 +6,12 @@ from transformers import GPT2Tokenizer
 import pandas as pd
 
 agency_lexicon_data = pd.read_csv('./pt_agency_lexicons.csv')
+# print("positive:", list(agency_lexicon_data['positive'].dropna()))
+# print("neutral:", list(agency_lexicon_data['neutral'].dropna()))
+# print("negative:", list(agency_lexicon_data['negative'].dropna()))
 
 class PowerTransformer(nn.Module):
-    def __init__(self, hidden_dim, vocab_size, beta=5.0):
+    def __init__(self, hidden_dim, vocab_size, beta=2):
         """
         - Masked Reconstruction Training
         - Connotation Frames for Agency Control
@@ -26,11 +29,14 @@ class PowerTransformer(nn.Module):
 
         # Define agency lexicon，need to find a new database for these
         self.agency_lexicon = {
-            "positive": agency_lexicon_data['positive'].tolist(),
-            "neutral": agency_lexicon_data['neutral'].tolist(),
-            "negative": agency_lexicon_data['negative'].tolist()
+            "positive": list(agency_lexicon_data['positive'].dropna()),
+            "neutral": list(agency_lexicon_data['neutral'].dropna()),
+            "negative": list(agency_lexicon_data['negative'].dropna())
+            # "positive": ['win'],
+            # 'neutral': ['build'],
+            # 'negative': ['break']
         }
-    
+
     def mask_and_reconstruct(self, input_ids, tokenizer, target_agency="neutral"):
         """
         Masks agency-related verbs and reconstructs them using controlled agency.
@@ -39,18 +45,18 @@ class PowerTransformer(nn.Module):
 
         # Get vocabulary index for replacement verbs
         replacement_words = self.agency_lexicon[target_agency]
-        replacement_ids = [tokenizer.convert_tokens_to_ids(w) for w in replacement_words if tokenizer.convert_tokens_to_ids(w) is not None]
+        eot = tokenizer.convert_tokens_to_ids('<|endoftext|>')
+        replacement_ids = [tokenizer.convert_tokens_to_ids(w) for w in replacement_words if (tokenizer.convert_tokens_to_ids(w) is not None and tokenizer.convert_tokens_to_ids(w) != eot)]
 
-        if len(replacement_ids) == 0: #if no replacement, use original words
+        if len(replacement_ids) == 0:
             return modified_ids
 
         for i in range(input_ids.shape[0]):
             for j in range(input_ids.shape[1]):
                 token = tokenizer.decode([input_ids[i, j]]).strip().lower()
-                
                 # Check if token is a verb in any agency category
                 for agency, verbs in self.agency_lexicon.items():
-                    if token in verbs:
+                    if agency != target_agency and token in verbs:
                         modified_ids[i, j] = np.random.choice(replacement_ids)  # Replace with controlled verb
                         break
 
