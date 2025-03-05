@@ -6,12 +6,9 @@ from transformers import GPT2Tokenizer
 import pandas as pd
 
 agency_lexicon_data = pd.read_csv('./pt_agency_lexicons.csv')
-# print("positive:", list(agency_lexicon_data['positive'].dropna()))
-# print("neutral:", list(agency_lexicon_data['neutral'].dropna()))
-# print("negative:", list(agency_lexicon_data['negative'].dropna()))
 
 class PowerTransformer(nn.Module):
-    def __init__(self, hidden_dim, vocab_size, beta=5):
+    def __init__(self, hidden_dim, vocab_size, beta=5, activate=False):
         """
         - Masked Reconstruction Training
         - Connotation Frames for Agency Control
@@ -27,14 +24,15 @@ class PowerTransformer(nn.Module):
         # Vocabulary boosting scores for controlling agency in token selection
         self.boosting_weights = nn.Parameter(torch.ones(vocab_size))
 
-        self.agency_lexicon = {
+        self.agency_lexicon ={
             "positive": list(agency_lexicon_data['positive'].dropna()),
             "neutral": list(agency_lexicon_data['neutral'].dropna()),
             "negative": list(agency_lexicon_data['negative'].dropna())
-            # "positive": ['win'],
-            # 'neutral': ['build'],
-            # 'negative': ['break']
-        }
+        } if activate else {
+            "positive": [],
+            "neutral": [],
+            "negative": []
+        } 
 
     def mask_and_reconstruct(self, input_ids, tokenizer, target_agency="neutral"):
         """

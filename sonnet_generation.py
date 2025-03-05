@@ -27,6 +27,7 @@ from models.gpt2 import GPT2Model
 
 from optimizer import AdamW
 import pandas as pd
+from power_transformer import PowerTransformer
 
 TQDM_DISABLE = False
 
@@ -85,8 +86,11 @@ class SonnetGPT(nn.Module):
   def __init__(self, args, gender_subspace=None):
     super().__init__()
     self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
-    self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    self.tokenizer = GPT2Tokenizer.from_pretrained(args.model_size)
     self.tokenizer.pad_token = self.tokenizer.eos_token
+    self.attn = nn.MultiheadAttention(embed_dim=args.d, num_heads=6)
+    self.power_transformer = PowerTransformer(hidden_dim=args.d, vocab_size=self.gpt.config.vocab_size)
+
     if gender_subspace is not None:
       self.debias_layer = DebiasLayer(gender_subspace)
     else:
@@ -98,18 +102,20 @@ class SonnetGPT(nn.Module):
     
     self.lm_head = nn.Linear(args.d, self.tokenizer.vocab_size)
 
-  def forward(self, input_ids, attention_mask):
+  def forward(self, input_ids, attention_mask, target_agency="neutral"):
     """
     This is similar to the forward for ParaphraseGPT, but we now want to produce a logit for each token in our sequence;
     not just the last token! This will allow our model to learn the natural language distribution that composes sonnets,
     not just the distribution over next tokens for the last token!
     """
     ### YOUR CODE HERE
-    outputs = self.gpt(input_ids, attention_mask)
+    modified_ids = self.power_transformer.mask_and_reconstruct(input_ids, self.tokenizer, target_agency)
+    outputs = self.gpt(modified_ids, attention_mask)
     hidden_states = outputs['last_hidden_state']
+    hidden_states = self.attn(hidden_states, hidden_states, hidden_states)[0]
     if self.debias_layer:
       hidden_states = self.debias_layer(hidden_states)  # Apply debiasing before logits
-
+    
     logits = self.lm_head(hidden_states)
     return logits
 
@@ -119,7 +125,7 @@ class SonnetGPT(nn.Module):
       return param.device
 
   @torch.no_grad()
-  def generate(self, encoding, temperature=0.7, top_p=0.9, max_length=128):
+  def generate(self, encoding, temperature, top_p, max_length=128):
     """
     Generates an original sonnet using top-p sampling and softmax temperature.
 
@@ -186,8 +192,8 @@ def train(args):
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
   df = pd.read_csv("data/gender_pairs.csv")
   gender_pairs = list(df.itertuples(index=False, name=None))
-  tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-  gpt2_model = GPT2Model.from_pretrained("gpt2").to(device)
+  tokenizer = GPT2Tokenizer.from_pretrained(args.model_size)
+  gpt2_model = GPT2Model.from_pretrained(args.model_size).to(device)
   gender_subspace = DebiasLayer.compute_gender_subspace(gpt2_model, tokenizer, gender_pairs)
   
   # Create the data and its corresponding datasets and dataloader.
@@ -199,11 +205,11 @@ def train(args):
   held_out_sonnet_dataset = SonnetsDataset(args.held_out_sonnet_path)
 
   args = add_arguments(args)
-  model = SonnetGPT(args)
+  model = SonnetGPT(args, gender_subspace)
   model = model.to(device)
 
   lr = args.lr
-  optimizer = AdamW(model.parameters(), lr=lr)
+  optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.)
 
   # Run for the specified number of epochs.
   for epoch in range(args.epochs):
@@ -216,10 +222,11 @@ def train(args):
       b_ids, b_mask = batch['token_ids'], batch['attention_mask']
       b_ids = b_ids.to(device)
       b_mask = b_mask.to(device)
-
+      
+      modified_b_ids = model.power_transformer.mask_and_reconstruct(b_ids, tokenizer, target_agency="neutral")
       # Compute the loss, gradients, and update the model's parameters.
       optimizer.zero_grad()
-      logits = model(b_ids, b_mask)
+      logits = model(modified_b_ids, b_mask)
       logits = rearrange(logits[:, :-1].contiguous(), 'b t d -> (b t) d')  # Ignore the last prediction in the sequence.
       labels = b_ids[:, 1:].contiguous().flatten()  # Ignore the first token to compose the labels.
       loss = F.cross_entropy(logits, labels, reduction='mean')
@@ -247,8 +254,8 @@ def generate_submission_sonnets(args):
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
   df = pd.read_csv("data/gender_pairs.csv")
   gender_pairs = list(df.itertuples(index=False, name=None))
-  tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-  gpt2_model = GPT2Model.from_pretrained("gpt2").to(device)
+  tokenizer = GPT2Tokenizer.from_pretrained(args.model_size)
+  gpt2_model = GPT2Model.from_pretrained(args.model_size).to(device)
   gender_subspace = DebiasLayer.compute_gender_subspace(gpt2_model, tokenizer, gender_pairs)
 
 
@@ -266,7 +273,9 @@ def generate_submission_sonnets(args):
   for batch in held_out_sonnet_dataset:
     sonnet_id = batch[0]
     encoding = model.tokenizer(batch[1], return_tensors='pt', padding=False, truncation=True).to(device)
-    output = model.generate(encoding['input_ids'], temperature=args.temperature, top_p=args.top_p)[0][0]
+
+    modified_encoding = model.power_transformer.mask_and_reconstruct(encoding['input_ids'], tokenizer, target_agency="neutral")
+    output = model.generate(modified_encoding, temperature=args.temperature, top_p=args.top_p)[0][0]
     decoded_output = model.tokenizer.decode(output)
     full_sonnet = f'{decoded_output}\n\n'
     generated_sonnets.append((sonnet_id, full_sonnet))

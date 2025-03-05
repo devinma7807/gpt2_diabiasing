@@ -33,6 +33,7 @@ from models.gpt2 import GPT2Model
 from optimizer import AdamW
 import pandas as pd
 from transformers import GPT2Tokenizer
+from power_transformer import PowerTransformer
 
 TQDM_DISABLE = False
 
@@ -90,47 +91,45 @@ class DebiasLayer(nn.Module):
             gender_subspace = gender_subspace.view(768)  # Reshape to match embeddings
             return gender_subspace
 
-
-
-
 class ParaphraseGPT(nn.Module):
   """Your GPT-2 Model designed for paraphrase detection."""
-
-  def __init__(self, args, gender_subspace=None):
+  def __init__(self, args, tokenizer, gender_subspace=None):
     super().__init__()
     self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
     self.paraphrase_detection_head = nn.Linear(args.d, 2)  # Paraphrase detection has two outputs: 1 (yes) or 0 (no).
-
+    self.power_transformer = PowerTransformer(hidden_dim=args.d, vocab_size=self.gpt.config.vocab_size)
+    self.tokenizer = tokenizer
     if gender_subspace is not None:
-      self.debias_layer = DebiasLayer(gender_subspace)
+        self.debias_layer = DebiasLayer(gender_subspace)
     else:
-      self.debias_layer = None
+        self.debias_layer = None
     # By default, fine-tune the full model.
     for param in self.gpt.parameters():
-      param.requires_grad = True
+        param.requires_grad = True
 
-  def forward(self, input_ids, attention_mask):
+  def forward(self, input_ids, attention_mask, target_agency="neutral"):
     """
     TODO: Predict the label of the token using the paraphrase_detection_head Linear layer.
 
     We structure the input as:
-      'Is "{s1}" a paraphrase of "{s2}"? Answer "yes" or "no": '
+    'Is "{s1}" a paraphrase of "{s2}"? Answer "yes" or "no": '
 
     So you want to find the prediction for the next token at the end of this sentence. Optimistically, it will be the
     token "yes" (byte pair encoding index of 8505) for examples that are paraphrases or "no" (byte pair encoding index
-     of 3919) for examples that are not paraphrases.
+    of 3919) for examples that are not paraphrases.
     """
 
     'Takes a batch of sentences and produces embeddings for them.'
     ### YOUR CODE HERE
-    outputs = self.gpt(input_ids, attention_mask)
+    modified_ids = self.power_transformer.mask_and_reconstruct(input_ids, self.tokenizer, target_agency)
+
+    outputs = self.gpt(modified_ids, attention_mask)
     last_hidden_state = outputs["last_hidden_state"]
     last_token_hidden_state = last_hidden_state[:, -1, :]
+    modified_embeddings = self.power_transformer(last_hidden_state, modified_ids)
 
     if self.debias_layer:
-      last_token_hidden_state = self.debias_layer(last_token_hidden_state)
-        
-
+        last_token_hidden_state = self.debias_layer(last_token_hidden_state)
 
     # logits = self.paraphrase_detection_head(last_token_hidden_state)
     logits = self.gpt.hidden_state_to_token(last_token_hidden_state)  #  Correct way
@@ -173,7 +172,7 @@ def train(args):
                                    collate_fn=para_dev_data.collate_fn)
 
   args = add_arguments(args)
-  model = ParaphraseGPT(args, gender_subspace)
+  model = ParaphraseGPT(args, tokenizer, gender_subspace)
   model = model.to(device)
 
   lr = args.lr
@@ -194,8 +193,7 @@ def train(args):
 
       # Compute the loss, gradients, and update the model's parameters.
       optimizer.zero_grad()
-      logits = model(b_ids, b_mask)
-      preds = torch.argmax(logits, dim=1)
+      logits = model(b_ids, b_mask, target_agency="neutral")
       loss = F.cross_entropy(logits, labels, reduction='mean')
       loss.backward()
       optimizer.step()
@@ -225,7 +223,7 @@ def test(args):
   gender_subspace = DebiasLayer.compute_gender_subspace(gpt2_model, tokenizer, gender_pairs)
   saved = torch.load(args.filepath)
 
-  model = ParaphraseGPT(saved['args'], gender_subspace)
+  model = ParaphraseGPT(saved['args'], tokenizer, gender_subspace)
   model.load_state_dict(saved['model'])
   model = model.to(device)
   model.eval()
