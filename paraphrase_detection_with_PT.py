@@ -172,7 +172,7 @@ def train(args):
                                    collate_fn=para_dev_data.collate_fn)
 
   args = add_arguments(args)
-  model = ParaphraseGPT(args, tokenizer, tokenizer, gender_subspace)
+  model = ParaphraseGPT(args, tokenizer, gender_subspace)
   model = model.to(device)
 
   lr = args.lr
