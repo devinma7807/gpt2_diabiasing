@@ -33,11 +33,11 @@ TQDM_DISABLE = False
 class DebiasLayer(nn.Module):
     def __init__(self, gender_subspace):
         super().__init__()
-        self.gender_subspace = gender_subspace  # Precomputed gender direction
+        self.gender_subspace = gender_subspace
 
     def forward(self, embeddings):
         """Projects embeddings onto a debiased subspace."""
-        gender_direction = self.gender_subspace.view(-1, 1)  # Reshape for matmul
+        gender_direction = self.gender_subspace.view(-1, 1)
         projection = torch.matmul(embeddings, gender_direction) * gender_direction.T
         debiased_embeddings = embeddings - projection
         return debiased_embeddings
@@ -46,25 +46,18 @@ class DebiasLayer(nn.Module):
     def compute_gender_subspace(gpt2_model, tokenizer, gender_pairs):
         """Compute the gender subspace dynamically from GPT-2 embeddings."""
         with torch.no_grad():
-            embeddings = gpt2_model.word_embedding.weight   # GPT-2 token embeddings
+            embeddings = gpt2_model.word_embedding.weight
             gender_vectors = []
             for male_word, female_word in gender_pairs:
                 male_idx = tokenizer.convert_tokens_to_ids(male_word)
                 female_idx = tokenizer.convert_tokens_to_ids(female_word)
                 if male_idx is not None and female_idx is not None:
                     gender_vectors.append(embeddings[male_idx] - embeddings[female_idx])
-            
-            # Convert to NumPy and compute gender subspace using SVD
             gender_matrix = torch.stack(gender_vectors).cpu().numpy()
             U, S, Vt = np.linalg.svd(gender_matrix, full_matrices=False)
-            
-            # Take only the first principal component (1D vector of size 768)
-            device = next(gpt2_model.parameters()).device  # ✅ Get the correct device
-            gender_subspace = torch.tensor(Vt[0], dtype=torch.float32).to(device)  # ✅ Use the correct device
-            # gender_subspace = torch.tensor(Vt[0], dtype=torch.float32).to(gpt2_model.device)  # First singular vector
-
-            # Ensure the gender subspace matches GPT-2 embedding dimension (768,)
-            gender_subspace = gender_subspace.view(768)  # Reshape to match embeddings
+            device = next(gpt2_model.parameters()).device
+            gender_subspace = torch.tensor(Vt[0], dtype=torch.float32).to(device)
+            gender_subspace = gender_subspace.view(768)
             return gender_subspace
 
 
@@ -111,7 +104,7 @@ class SonnetGPT(nn.Module):
     hidden_states = outputs['last_hidden_state']
     hidden_states = self.attn(hidden_states, hidden_states, hidden_states)[0]
     if self.debias_layer:
-      hidden_states = self.debias_layer(hidden_states)  # Apply debiasing before logits
+      hidden_states = self.debias_layer(hidden_states)
     
     logits = self.lm_head(hidden_states)
     return logits

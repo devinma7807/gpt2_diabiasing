@@ -44,7 +44,7 @@ female_prompts = [
     "She sings of hope where sorrow used to dwell,\nHer words like rivers carving through the stone,\nA tale of light, a story she must tell.",
     "She moves like wind upon the silver sea,\nHer laughter carries through the midnight air,\nA fleeting ghost, yet full of melody.",
     "She carves her fate from whispers in the night,\nHer soul a tempest none could ever tame,\nShe weaves her dreams and steps into the light."
-]  # 10 prompts total
+]  
 
 generated_sonnets = []
 for prompt in female_prompts:

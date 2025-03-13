@@ -4,10 +4,8 @@ import argparse
 from sonnet_generation import SonnetGPT, get_args
 import numpy as np
 
-# Model path you provided
 MODEL_PATH = "/Users/etsu/Desktop/CS 224N/final_project/cs224n_gpt/full_model/2_3-0.0002-sonnet.pt"
 device = "cpu"
-# Load device
 saved = torch.load(MODEL_PATH, weights_only=False, map_location=torch.device(device))
 
 model = SonnetGPT(saved['args'])
@@ -40,37 +38,34 @@ model.eval()
 
 
 
-# Helper function to get embeddings for multi-token words
+# to get embeddings for multi-token words
 def get_embedding(word):
     token_ids = model.tokenizer.encode(word, add_special_tokens=False)
     if not token_ids:
-        return None  # Word not in vocabulary
-
-    # Get embeddings and average across multiple tokens
+        return None  # Word not in vocab
     token_ids = torch.tensor(token_ids).to(device)
     embeddings = model.gpt.word_embedding(token_ids)
-    return embeddings.mean(dim=0)  # Average embedding for multi-token words
+    return embeddings.mean(dim=0)  # Average embeddings
 
-# Load SemBias.txt dataset
+# load
 sembias_file = "SemBias.txt"
 bias_data = []
 
 with open(sembias_file, "r") as f:
     for line in f:
         words = line.strip().split("\t")
-        if len(words) == 4:  # Ensure there are 4 word pairs
+        if len(words) == 4:  # get rid of missing lines
             bias_data.append(words)
 
-# Function to get token embeddings for a word
+#get token embeddings for a word
 def get_embedding(word):
     tokens = model.tokenizer.tokenize(word)
     token_ids = model.tokenizer.convert_tokens_to_ids(tokens)
     if not token_ids:
-        return None  # Skip if OOV
+        return None  # skip if not found
     token_tensors = torch.tensor(token_ids).to(device)
-    return model.gpt.word_embedding(token_tensors).mean(dim=0)  # Average over multiple tokens
+    return model.gpt.word_embedding(token_tensors).mean(dim=0)
 
-# Compute bias scores
 definition_score = 0
 stereotype_score = 0
 none_score = 0
@@ -83,16 +78,14 @@ for word_pairs in bias_data:
         male_emb, female_emb = get_embedding(male_word), get_embedding(female_word)
 
         if male_emb is None or female_emb is None:
-            continue  # Skip if OOV
+            continue
 
         diff_vector = male_emb - female_emb
-        diff_vector = diff_vector / (diff_vector.norm() + 1e-8)  # Normalize
+        diff_vector = diff_vector / (diff_vector.norm() + 1e-8)
         embeddings.append(diff_vector)
 
     if len(embeddings) != 4:
-        continue  # Ensure all four embeddings exist
-
-    # Compute cosine similarity with he-she vector
+        continue
     he_emb, she_emb = get_embedding("he"), get_embedding("she")
     if he_emb is None or she_emb is None:
         continue
@@ -102,8 +95,6 @@ for word_pairs in bias_data:
 
     similarities = [torch.dot(vec, gender_direction).item() for vec in embeddings]
     max_index = np.argmax(similarities)
-
-    # Categorize based on highest similarity
     if max_index == 0:
         definition_score += 1
     elif max_index == 1:
@@ -113,13 +104,11 @@ for word_pairs in bias_data:
 
     valid_instances += 1
 
-# Normalize scores
 if valid_instances > 0:
     definition_score /= valid_instances
     stereotype_score /= valid_instances
     none_score /= valid_instances
 
-# Print results
 print(f"Definition Bias Score: {definition_score:.4f}")
 print(f"Stereotype Bias Score: {stereotype_score:.4f}")
 print(f"None Bias Score: {none_score:.4f}")
@@ -151,10 +140,6 @@ print(f"None Bias Score: {none_score:.4f}")
 #     full_sonnet = f"{decoded_output}\n\n"
 #     generated_sonnets.append((label, full_sonnet))
 
-#     print(f"🔹 **{label} Prompt:**\n{prompt}\n")
-#     print(f"🔹 **Generated Continuation:**\n{decoded_output}\n")
-#     print("-" * 80)
-
 # # Save results
 # output_path = "/Users/etsu/Desktop/CS 224N/final_project/cs224n_gpt/generated_bias_sonnets.txt"
 # with open(output_path, "w") as f:
@@ -162,5 +147,3 @@ print(f"None Bias Score: {none_score:.4f}")
 #     for label, sonnet in generated_sonnets:
 #         f.write(f"\n{label}\n")
 #         f.write(sonnet)
-
-# print(f"✅ Generated sonnets saved to: {output_path}")

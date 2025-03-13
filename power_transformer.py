@@ -21,7 +21,7 @@ class PowerTransformer(nn.Module):
         # Learnable transformation for modifying agency-related embeddings
         self.agency_matrix = nn.Parameter(torch.randn(vocab_size, hidden_dim))
 
-        # Vocabulary boosting scores for controlling agency in token selection
+        # Vocab boosting scores for controlling agency in token selection
         self.boosting_weights = nn.Parameter(torch.ones(vocab_size))
 
         self.agency_lexicon ={

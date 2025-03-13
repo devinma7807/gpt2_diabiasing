@@ -7,14 +7,10 @@ import spacy
 import pandas as pd
 from collections import Counter
 
-
-# Model path you provided
 MODEL_PATH = "/Users/etsu/Desktop/CS 224N/final_project/cs224n_gpt/plain/4-5e-05-paraphrase_plain.pt"
 device = "cpu"
-# Load device
 saved = torch.load(MODEL_PATH, weights_only=False, map_location=device)
 
-# Load a pre-trained GPT-2 model for fluency evaluation
 gpt2_eval_model = GPT2LMHeadModel.from_pretrained("gpt2").to(device)
 gpt2_eval_model.eval()
 gpt2_tokenizer = GPT2Tokenizer.from_pretrained("gpt2")

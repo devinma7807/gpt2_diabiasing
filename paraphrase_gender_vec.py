@@ -50,17 +50,12 @@ def seed_everything(seed=11711):
 class DebiasLayer(nn.Module):
     def __init__(self, gender_subspace):
         super().__init__()
-        self.gender_subspace = gender_subspace  # Precomputed gender direction
+        self.gender_subspace = gender_subspace
 
     def forward(self, embeddings):
         """Projects embeddings onto a debiased subspace."""
-        # Ensure the gender subspace is reshaped correctly
-        gender_direction = self.gender_subspace.view(-1, 1)  # Reshape to (768, 1) for matmul
-        
-        # Compute the projection onto the gender direction
+        gender_direction = self.gender_subspace.view(-1, 1)  # to(768, 1)
         projection = torch.matmul(embeddings, gender_direction) * gender_direction.T
-        
-        # Subtract the projection to remove gender bias
         debiased_embeddings = embeddings - projection
         return debiased_embeddings
 
@@ -69,7 +64,7 @@ class DebiasLayer(nn.Module):
     def compute_gender_subspace(gpt2_model, tokenizer, gender_pairs):
         """Compute the gender subspace dynamically from GPT-2 embeddings."""
         with torch.no_grad():
-            embeddings = gpt2_model.word_embedding.weight   # GPT-2 token embeddings
+            embeddings = gpt2_model.word_embedding.weight #
             gender_vectors = []
             for male_word, female_word in gender_pairs:
                 male_idx = tokenizer.convert_tokens_to_ids(male_word)
@@ -77,17 +72,14 @@ class DebiasLayer(nn.Module):
                 if male_idx is not None and female_idx is not None:
                     gender_vectors.append(embeddings[male_idx] - embeddings[female_idx])
             
-            # Convert to NumPy and compute gender subspace using SVD
             gender_matrix = torch.stack(gender_vectors).cpu().numpy()
             U, S, Vt = np.linalg.svd(gender_matrix, full_matrices=False)
             
-            # Take only the first principal component (1D vector of size 768)
-            device = next(gpt2_model.parameters()).device  # ✅ Get the correct device
-            gender_subspace = torch.tensor(Vt[0], dtype=torch.float32).to(device)  # ✅ Use the correct device
+            # extrsct the 1st PC
+            device = next(gpt2_model.parameters()).device
+            gender_subspace = torch.tensor(Vt[0], dtype=torch.float32).to(device)
             # gender_subspace = torch.tensor(Vt[0], dtype=torch.float32).to(gpt2_model.device)  # First singular vector
-
-            # Ensure the gender subspace matches GPT-2 embedding dimension (768,)
-            gender_subspace = gender_subspace.view(768)  # Reshape to match embeddings
+            gender_subspace = gender_subspace.view(768)
             return gender_subspace
 
 class ParaphraseGPT(nn.Module):

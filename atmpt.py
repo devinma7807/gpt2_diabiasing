@@ -5,7 +5,7 @@ from sonnet_generation import SonnetGPT as fullSonnetGPT
 from sonnet_gender_vec import SonnetGPT as GDSonnetGPT
 from sonnet_plain import SonnetGPT as plainSonnetGPT
 
-# Model paths (adjust as needed)
+
 Plain_MODEL_PATH = "/Users/etsu/Desktop/CS 224N/final_project/cs224n_gpt/plain/2_3-0.0002-sonnet_plain.pt"
 GD_MODEL_PATH = "/Users/etsu/Desktop/CS 224N/final_project/cs224n_gpt/gender_vec_only/2_3-0.0002-sonnet_gender_vec.pt"
 Full_MODEL_PATH = "/Users/etsu/Desktop/CS 224N/final_project/cs224n_gpt/full_model/2_3-0.0002-sonnet.pt"  # If applicable
